@@ -1,6 +1,8 @@
 // English -> Greek, line by line, so lyrics keep their shape.
 // Returns lines: [{ en, el }] where a blank line ({ en: '', el: '' }) marks a stanza break.
 
+import { phrase } from './phrasebook.js';
+
 const ENDPOINT = 'https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=el&dt=t';
 const CHUNK_CHARS = 3500;
 const cache = new Map();
@@ -46,21 +48,46 @@ async function translateChunk(lines, signal) {
   const text = lines.join('\n');
   if (cache.has(text)) return cache.get(text);
 
+  // Known everyday phrases come from the phrasebook; everything else goes to the translator,
+  // one sentence per line so the answers can be put back in place.
+  const plan = lines.map(line => sentences(line).map(s => ({ en: s, el: phrase(s) })));
+  const pending = plan.flat().filter(p => p.el === null);
+  if (pending.length) {
+    const out = await machine(pending.map(p => p.en), signal);
+    if (out) {
+      pending.forEach((p, i) => (p.el = out[i]));
+    } else {
+      // Sentence count drifted; fall back to whole lines.
+      const whole = await machine(lines, signal);
+      plan.forEach((parts, i) => {
+        if (parts.some(p => p.el === null)) plan[i] = [{ el: whole ? whole[i] : '' }];
+      });
+    }
+  }
+
+  const result = lines.map((en, i) => ({ en, el: plan[i].map(p => p.el).join(' ').trim() }));
+  cache.set(text, result);
+  return result;
+}
+
+// Translate a list of lines; null if the translator didn't hand back the same number of lines.
+async function machine(lines, signal) {
   let greek;
   try {
-    greek = await google(text, signal);
+    greek = await google(lines.join('\n'), signal);
   } catch (e) {
     if (signal?.aborted) throw e;
     // MyMemory only takes short text, so go line by line.
     greek = (await Promise.all(lines.map(l => (l.trim() ? myMemory(l, signal) : '')))).join('\n');
   }
+  const out = greek.split('\n').map(s => s.trim());
+  return out.length === lines.length ? out : null;
+}
 
-  const out = greek.split('\n');
-  const result = out.length === lines.length
-    ? lines.map((en, i) => ({ en, el: out[i].trim() }))
-    : out.map(el => ({ en: '', el: el.trim() })); // line count drifted: show Greek without English pairing
-  cache.set(text, result);
-  return result;
+// "Hi, how are you? I'm Jack." -> ["Hi, how are you?", "I'm Jack."]
+function sentences(line) {
+  const parts = line.match(/[^.!?…]+(?:[.!?…]+["'”’)]*|$)/g) || [];
+  return parts.map(s => s.trim()).filter(Boolean);
 }
 
 // Tidy pasted text: trim, drop trailing spaces, collapse runs of blank lines.

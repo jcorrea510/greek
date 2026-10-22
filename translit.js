@@ -12,7 +12,7 @@ const CONS = {
   'ξ': 'ks', 'π': 'p', 'ρ': 'r', 'σ': 's', 'ς': 's', 'τ': 't', 'φ': 'f', 'χ': 'h', 'ψ': 'ps',
 };
 const VOWEL_DIGRAPHS = { 'ου': 'u', 'αι': 'e', 'ει': 'i', 'οι': 'i', 'υι': 'i' };
-const CONS_DIGRAPHS = { 'μπ': 'b', 'ντ': 'd', 'γκ': 'g', 'γγ': 'ng', 'γχ': 'nh', 'τσ': 'ts', 'τζ': 'dz' };
+const CONS_DIGRAPHS = { 'μπ': 'b', 'ντ': 'd', 'γκ': 'g', 'γγ': 'ng', 'τσ': 'ts', 'τζ': 'dz' };
 const ONSETS = new Set([
   'pr', 'tr', 'kr', 'br', 'dr', 'gr', 'fr', 'vr', 'thr', 'hr', 'dhr',
   'pl', 'kl', 'fl', 'gl', 'bl', 'vl', 'hl', 'sp', 'st', 'sk', 'sm', 'sf', 'sh',
@@ -39,6 +39,7 @@ function phonemes(word) {
       i++; continue;
     }
     if (VOWEL_DIGRAPHS[pair]) { units.push({ v: VOWEL_DIGRAPHS[pair], stressed }); i++; continue; }
+    if (pair === 'γχ') { units.push({ c: 'n' }, { c: 'h' }); i++; continue; }
     if (CONS_DIGRAPHS[pair]) { units.push({ c: CONS_DIGRAPHS[pair] }); i++; continue; }
     if (a === b && CONS[a]) continue; // λλ, σσ, ττ... sound like one letter
     if (VOWEL[a]) { units.push({ v: VOWEL[a], stressed: L[i].stressed }); continue; }

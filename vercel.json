@@ -1,3 +1,4 @@
 {
+  "framework": null,
   "functions": { "api/tts.py": { "maxDuration": 30 } }
 }

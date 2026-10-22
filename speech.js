@@ -209,3 +209,10 @@ export async function playAll(units, start, slow, handlers) {
   }
   handlers.onEnd?.();
 }
+
+// Wake the speech function on launch so the first tap doesn't pay for a cold start.
+// The minute stamp gets past the CDN cache without hammering the function.
+export function warmUp() {
+  if (serverDown) return;
+  fetch(`${API}/api/tts?text=${encodeURIComponent('Γεια')}&w=${Math.floor(Date.now() / 60000)}`).catch(() => {});
+}

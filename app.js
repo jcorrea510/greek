@@ -377,6 +377,7 @@ document.addEventListener('touchstart', () => {}, { passive: true });
 
 // ---------- Start ----------
 
+speech.warmUp();
 renderSpeed();
 input.value = store.get('greek.text') || '';
 autosize();
