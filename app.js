@@ -1,194 +1,240 @@
-import { syllabify, pronounce } from './translit.js';
-import { translate, normalize } from './translate.js';
+import { store } from './config.js';
+import { translate, translateNow, normalize } from './translate.js';
+import { readLine } from './translit.js';
 import * as speech from './speech.js';
 import * as dictation from './dictation.js';
+import * as library from './library.js';
 
 const $ = id => document.getElementById(id);
 const input = $('input'), clearBtn = $('clear'), doneBtn = $('done'), pasteBtn = $('paste'), micBtn = $('mic');
-const listening = $('listening'), count = $('count');
-const output = $('output'), spinner = $('spinner'), errorEl = $('error');
-const toolbar = $('toolbar'), playBtn = $('play'), speedBtn = $('speed'), copyBtn = $('copy');
-const nav = $('nav'), hud = $('hud'), hudText = $('hudText');
+const listening = $('listening'), count = $('count'), inputCard = $('inputCard');
+const resultCard = $('result'), stateEl = $('state'), registerSeg = $('register'), saveBtn = $('save'), copyBtn = $('copy');
+const home = $('home'), dock = $('dock'), playBtn = $('play'), progress = $('progress'), speedSeg = $('speed');
+const toastEl = $('toast'), toastText = $('toastText');
+let linesEl = $('lines');
 
 const UNIT_CHARS = 280;          // a long line is spoken in pieces of about this many characters
-const store = {
-  get: k => { try { return localStorage.getItem(k); } catch { return null; } },
-  set: (k, v) => { try { localStorage.setItem(k, v); } catch {} },
+const TYPING_DELAY = 650;        // ms of quiet before a sentence goes to the translator
+const SUGGESTIONS = ['Hello', 'How are you?', 'Thank you', 'The bill, please', 'Cheers!', 'I love you', 'Where’s the beach?', 'How much is it?'];
+
+const state = {
+  text: '',                      // normalized input the result belongs to
+  result: null,                  // { lines: [{ en, el, formal }], basic }
+  register: 'casual',
+  slow: store.get('greek.slow', false) === true,
+  lines: [],                     // rendered lines: { node, units } | { gap }
+  playing: false,
 };
+let request = 0, controller = null, timer = 0, lit = null, nowLine = null;
 
-let chunks = [];                 // per translated chunk: [line]; line = { gap } | { node, plain, units }
-let linesEl = $('lines');
-let slow = store.get('greek.slow') === '1';
-let request = 0, controller = null, timer = 0, lastText = null;
-let playing = false, lit = null, nowLine = null;
+const icon = name => `<svg><use href="#i-${name}"/></svg>`;
+const el = (tag, cls, text) => Object.assign(document.createElement(tag), cls ? { className: cls } : {}, text != null ? { textContent: text } : {});
 
-// ---------- Rendering ----------
+// ---------- Rendering a result ----------
 
-const PUNCT = { ';': '?', ';': '?', '·': ';', '·': ';', '«': '“', '»': '”' };
-const fixPunct = s => s.replace(/[;;··«»]/g, c => PUNCT[c]);
-
-function wordSpan(word) {
-  const span = document.createElement('span');
-  span.className = 'w';
-  syllabify(word).forEach((s, i) => {
-    if (i) {
-      const dot = document.createElement('span');
-      dot.className = 'dot';
-      dot.textContent = '·';
-      span.append(dot);
-    }
-    span.append(s.stressed ? Object.assign(document.createElement('b'), { textContent: s.text }) : s.text);
+function wordSpan(w) {
+  const span = el('span', 'w');
+  w.syl.forEach((s, i) => {
+    if (i) span.append(el('i', '', '-'));
+    span.append(s.stressed ? el('b', '', s.text.toUpperCase()) : s.text);
   });
   return span;
 }
 
-const SPEAKER = '<svg viewBox="0 0 24 24"><path class="f" d="M3.5 9.25v5.5c0 .55.45 1 1 1h2.6l4.15 3.6c.65.55 1.65.1 1.65-.75V5.4c0-.85-1-1.3-1.65-.75L7.1 8.25H4.5c-.55 0-1 .45-1 1z"/><path d="M16.5 8.75a4.6 4.6 0 0 1 0 6.5M19.25 6a8.5 8.5 0 0 1 0 12"/></svg>';
+function renderLine(line, lyrics) {
+  const greek = state.register === 'formal' && line.formal ? line.formal : line.el;
+  if (!greek) return { gap: true, node: el('div', 'gap') };
 
-function renderLine({ en, el }, showEnglish) {
-  if (!el) return { gap: true, node: Object.assign(document.createElement('div'), { className: 'gap' }) };
-
-  const node = document.createElement('div');
-  node.className = 'line';
-  const say = document.createElement('p');
-  say.className = 'say';
-  const plain = [], units = [];
+  const node = el('div', 'line');
+  const say = el('p', 'say');
+  const { words } = readLine(greek);
+  const units = [];
   let unit = null;
-
-  el.split(/\s+/).filter(Boolean).forEach((token, i) => {
+  words.forEach((w, i) => {
     if (i) say.append(' ');
-    const [, lead, word, trail] = token.match(/^([^\p{L}\p{N}]*)(.*?)([^\p{L}\p{N}]*)$/u);
-    if (lead) say.append(fixPunct(lead));
-    if (word) {
-      if (!unit) units.push((unit = { text: '', tokens: [], spans: [], node }));
-      const span = wordSpan(word);
-      span.unit = unit;
-      span.k = unit.tokens.length;
-      unit.text += (unit.text ? ' ' : '') + token;
-      unit.tokens.push(word);
-      unit.spans.push(span);
-      say.append(span);
-      plain.push(fixPunct(lead) + pronounce(word) + fixPunct(trail));
-      // Start a new spoken piece after a sentence ends, once this one is long enough.
-      if (unit.text.length > UNIT_CHARS && /[.!;?·]/.test(trail)) unit = null;
-    } else {
-      plain.push(fixPunct(token));
-    }
-    if (trail) say.append(fixPunct(trail));
+    if (w.lead) say.append(w.lead);
+    if (!unit) units.push((unit = { text: '', tokens: [], spans: [], node }));
+    const span = wordSpan(w);
+    span.unit = unit;
+    span.k = unit.tokens.length;
+    span.say = w.say;
+    unit.text += (unit.text ? ' ' : '') + w.lead.replace(/[“”]/g, '') + w.greek + w.trail.replace(/\?/g, ';').replace(/[“”]/g, '');
+    unit.tokens.push(w.say);
+    unit.spans.push(span);
+    say.append(span);
+    if (w.trail) say.append(w.trail);
+    // Start a new spoken piece after a sentence ends, once this one is long enough.
+    if (unit.text.length > UNIT_CHARS && /[.!?;]/.test(w.trail)) unit = null;
   });
-  node.append(say);
-
-  if (showEnglish && en) {
-    const btn = document.createElement('button');
-    btn.className = 'en';
-    btn.innerHTML = SPEAKER;
-    btn.prepend(en);
-    btn.setAttribute('aria-label', 'Play line: ' + en);
+  node.append(say, el('p', 'el', greek));
+  if (lyrics && line.en) {
+    const btn = el('button', 'en');
+    btn.innerHTML = icon('speaker');
+    btn.prepend(line.en);
+    btn.setAttribute('aria-label', 'Play line: ' + line.en);
     node.append(btn);
   }
-  return { node, plain: plain.join(' '), units };
+  node.units = units;
+  return { node, units, greek };
 }
 
-const allLines = () => chunks.flat().filter(Boolean);
-const allUnits = () => allLines().flatMap(l => l.units || []);
+const allLines = () => state.lines.filter(l => !l.gap);
+const allUnits = () => allLines().flatMap(l => l.units);
 
-// Warm up audio for lines as they scroll into view, so taps play instantly.
+// Warm the audio for lines as they come into view so taps play straight away.
 const warm = new IntersectionObserver(entries => {
-  for (const e of entries) {
-    if (!e.isIntersecting) continue;
-    warm.unobserve(e.target);
-    e.target.units?.forEach(u => speech.prefetch(u, slow));
+  for (const e of entries) if (e.isIntersecting) prefetch(e.target);
+}, { rootMargin: '300px 0px' });
+function prefetch(node) {
+  for (const u of node.units || []) {
+    speech.prefetchLine(u, state.slow);
+    u.spans.forEach(s => speech.prefetchWord(s.say, state.slow));
   }
-}, { rootMargin: '200px 0px' });
+}
 
-function fillChunk(root, slots, i, res, showEnglish) {
-  chunks[i] = res.map(r => renderLine(r, showEnglish));
-  const frag = document.createDocumentFragment();
-  for (const line of chunks[i]) {
-    frag.append(line.node);
-    if (!line.gap) { line.node.units = line.units; warm.observe(line.node); }
+function sizeClass(lines) {
+  const filled = lines.filter(l => l.el);
+  if (filled.length > 1) return 'lyrics';
+  const len = readLine(filled[0]?.el || '').plain.length;
+  return len <= 22 ? 'hero' : len <= 48 ? 'big' : '';
+}
+
+function render({ animate = true } = {}) {
+  stopPlaying();
+  const { lines, basic } = state.result;
+  const hasFormal = lines.some(l => l.formal);
+  if (!hasFormal) state.register = 'casual';
+  registerSeg.hidden = !hasFormal;
+  setSeg(registerSeg, state.register);
+
+  const lyrics = lines.filter(l => l.el).length > 1;
+  const root = el('div', `lines ${sizeClass(lines)}${animate ? ' swap' : ''}`);
+  root.id = 'lines';
+  state.lines = lines.map(l => renderLine(l, lyrics));
+  for (const l of state.lines) {
+    root.append(l.node);
+    if (!l.gap) warm.observe(l.node);
   }
-  slots[i].replaceWith(frag);
+  linesEl.replaceWith(root);
+  linesEl = root;
+
+  showState(basic ? 'basic' : null);
+  $('resultFoot').hidden = false;
+  resultCard.classList.remove('loading');
+  saveBtn.setAttribute('aria-pressed', library.isSaved(state.text));
+  showResult(true);
+}
+
+function skeleton() {
+  const root = el('div', 'lines skeleton');
+  root.id = 'lines';
+  root.innerHTML = '<span></span><span></span>';
+  linesEl.replaceWith(root);
+  linesEl = root;
+}
+
+// Inline message inside the result card.
+function showState(kind) {
+  stateEl.hidden = !kind;
+  stateEl.className = 'state' + (kind === 'basic' ? ' quiet' : '');
+  if (!kind) return;
+  const offline = !navigator.onLine;
+  const copy = {
+    basic: ['', 'Basic translation. The natural one is busy right now.', 'Retry'],
+    error: offline
+      ? ['wifi-off', '<b>You’re offline</b>Common phrases and ones you’ve translated before still work.', 'Retry']
+      : ['retry', '<b>Couldn’t translate</b>Check your connection and try again.', 'Try Again'],
+  }[kind];
+  stateEl.innerHTML = `${copy[0] ? icon(copy[0]) : ''}<p>${copy[1]}</p><button type="button">${copy[2]}</button>`;
+  stateEl.querySelector('button').onclick = () => { state.text = ''; run(true); };
+}
+
+function showResult(on) {
+  resultCard.hidden = !on;
+  home.hidden = on;
+  dock.hidden = !on || !state.result;
+  if (!on) renderHome();
 }
 
 // ---------- Translating ----------
 
-function lineCount(text) {
-  return normalize(text).split('\n').filter(Boolean).length;
+function setResult(result, text) {
+  if (text !== state.text) state.register = 'casual'; // every new phrase starts casual
+  state.result = result;
+  state.text = text;
+  render();
 }
 
-async function run() {
+async function run(force = false) {
   clearTimeout(timer);
-  const text = input.value;
-  store.set('greek.text', text);
-  const n = lineCount(text);
+  const text = normalize(input.value);
+  store.set('greek.text', input.value);
+  const n = text ? text.split('\n').filter(Boolean).length : 0;
   count.textContent = n > 3 ? `${n} lines` : '';
-  $('inputCard').classList.toggle('long', n > 5);
+  inputCard.classList.toggle('many', n > 4);
+  foldInput();
 
-  const clean = normalize(text);
-  if (clean === lastText) return;
-  lastText = clean;
-
+  if (text === state.text && !force) return;
   controller?.abort();
-  if (!n) {
-    request++;
+  const id = ++request;
+
+  if (!text) {
     stopPlaying();
-    chunks = [];
-    output.hidden = toolbar.hidden = true;
-    document.body.classList.remove('has-result');
+    state.text = '';
+    state.result = null;
+    showResult(false);
     return;
   }
 
-  const id = ++request;
+  // Instant when the phrasebook or a saved answer has it.
+  const now = translateNow(text);
+  if (now) return setResult(now, text);
+
+  // Otherwise keep the last result visible but faded, or show a skeleton the first time.
+  resultCard.classList.add('loading');
+  stateEl.hidden = true;
+  if (state.result && !resultCard.hidden) linesEl.classList.add('stale');
+  else { skeleton(); showResult(true); dock.hidden = true; }
+
   controller = new AbortController();
-  const showSpinner = setTimeout(() => id === request && (spinner.hidden = false), 150);
-
-  // Build the new result off-screen and swap it in when the first chunk lands, so typing doesn't flicker.
-  const root = document.createElement('div');
-  root.className = 'lines' + (n === 1 ? ' single' : '');
-  let slots = null, swapped = false;
-
   try {
-    await translate(text, {
-      signal: controller.signal,
-      onChunk(i, res, total) {
-        if (id !== request) return;
-        if (!slots) {
-          slots = Array.from({ length: total }, () => root.appendChild(document.createElement('div')));
-          stopPlaying();
-          chunks = new Array(total);
-        }
-        fillChunk(root, slots, i, res, n > 1);
-        if (!swapped && chunks[0]) {
-          swapped = true;
-          linesEl.replaceWith(root);
-          linesEl = root;
-          errorEl.hidden = true;
-          output.hidden = toolbar.hidden = false;
-          document.body.classList.add('has-result');
-        }
-      },
-    });
+    const res = await translate(text, { signal: controller.signal });
+    if (id !== request) return;
+    setResult(res, text);
   } catch (e) {
     if (id !== request || e.name === 'AbortError') return;
-    lastText = null;
-    errorEl.textContent = 'Couldn’t translate. Check your connection and try again.';
-    errorEl.hidden = false;
-    output.hidden = false;
-  } finally {
-    clearTimeout(showSpinner);
-    if (id === request) spinner.hidden = true;
+    state.result = null;
+    state.text = '';
+    resultCard.classList.remove('loading');
+    linesEl.replaceChildren();
+    linesEl.className = 'lines';
+    showState('error');
+    showResult(true);
+    $('resultFoot').hidden = true;
+    dock.hidden = true;
   }
 }
 
-function schedule(delay) {
+function schedule() {
   clearTimeout(timer);
-  timer = setTimeout(run, delay);
+  const text = normalize(input.value);
+  // Phrasebook hits and saved answers show while you type, without waiting.
+  if (text && text !== state.text && translateNow(text)) return run();
+  timer = setTimeout(run, TYPING_DELAY);
+}
+
+// Remember a finished translation in Recent.
+function commit() {
+  if (!state.result || state.result.basic || !state.text) return;
+  const first = state.result.lines.find(l => l.el);
+  if (!first) return;
+  library.addRecent({ en: state.text, el: first.el, read: readLine(first.el).plain });
 }
 
 // ---------- Playback ----------
 
 function light(span) {
-  lit?.classList.remove('on');
+  lit?.classList.remove('on', 'wait');
   lit = span;
   span?.classList.add('on');
 }
@@ -198,17 +244,16 @@ function setNowLine(node) {
   nowLine = node;
   if (!node) return;
   node.classList.add('now');
-  const r = node.getBoundingClientRect();
-  if (r.top < innerHeight * 0.18 || r.bottom > innerHeight * 0.72) {
-    scrollTo({ top: scrollY + r.top - innerHeight * 0.32, behavior: 'smooth' });
-  }
+  const scroller = $('scroll'), r = node.getBoundingClientRect(), h = scroller.clientHeight;
+  if (r.top < h * 0.2 || r.bottom > h * 0.7) scroller.scrollBy({ top: r.top - h * 0.32, behavior: 'smooth' });
 }
 
 function setPlaying(on) {
-  playing = on;
+  state.playing = on;
   playBtn.classList.toggle('on', on);
-  playBtn.querySelector('span').textContent = on ? 'Stop' : 'Play';
-  linesEl.classList.toggle('playing', on && allLines().filter(l => !l.gap).length > 1);
+  playBtn.querySelector('.play-label').textContent = on ? 'Stop' : 'Play';
+  linesEl.classList.toggle('playing', on && allLines().length > 1);
+  progress.style.transform = 'scaleX(0)';
   if (!on) { light(null); setNowLine(null); }
 }
 
@@ -220,77 +265,214 @@ function stopPlaying() {
 function play(units) {
   speech.unlock();
   setPlaying(true);
-  speech.playAll(units, 0, slow, {
+  commit();
+  speech.playAll(units, 0, state.slow, {
     onUnit: i => { light(null); setNowLine(units[i].node); },
     onWord: (i, k) => light(units[i].spans[k]),
+    onProgress: f => (progress.style.transform = `scaleX(${f})`),
     onEnd: () => setPlaying(false),
   });
 }
 
-playBtn.onclick = () => (playing ? stopPlaying() : play(allUnits()));
+playBtn.onclick = () => (state.playing ? stopPlaying() : play(allUnits()));
 
-document.addEventListener('click', e => {
-  const word = e.target.closest('.w');
-  if (word) {
-    speech.unlock();
-    setPlaying(false);
-    let litAt = 0;
-    speech.playWord(word.unit, word.k, slow, {
-      onStart: () => { light(word); litAt = performance.now(); },
-      // Keep very short words lit long enough to see.
-      onEnd: () => setTimeout(() => lit === word && light(null), Math.max(0, 350 - (performance.now() - litAt))),
-    });
-    return;
+// Words are small targets inside running text, so a tap goes to the nearest word within reach.
+function wordAt(x, y) {
+  const hit = document.elementFromPoint(x, y)?.closest('.w');
+  if (hit) return hit;
+  let best = null, bestD = 26;
+  for (const w of linesEl.querySelectorAll('.w')) {
+    for (const r of w.getClientRects()) {
+      const d = Math.hypot(Math.max(r.left - x, 0, x - r.right), Math.max(r.top - y, 0, y - r.bottom));
+      if (d < bestD) { bestD = d; best = w; }
+    }
   }
+  return best;
+}
+
+function playWord(word) {
+  speech.unlock();
+  setPlaying(false);
+  commit();
+  lit?.classList.remove('on', 'wait');
+  lit = word;
+  word.classList.add('wait');
+  let litAt = 0;
+  speech.playWord(word.say, word.unit, word.k, state.slow, {
+    onStart: () => { word.classList.remove('wait'); light(word); litAt = performance.now(); },
+    // Keep very short words lit long enough to see.
+    onEnd: () => setTimeout(() => lit === word && light(null), Math.max(0, 300 - (performance.now() - litAt))),
+  });
+}
+
+resultCard.addEventListener('click', e => {
   const en = e.target.closest('.en');
-  if (en) play(en.parentNode.units);
+  if (en) return play(en.closest('.line').units);
+  if (e.target.closest('button, .el') || !e.target.closest('.lines')) return;
+  const word = wordAt(e.clientX, e.clientY);
+  if (word) playWord(word);
 });
 
-function renderSpeed() {
-  speedBtn.textContent = slow ? '0.7×' : '1×';
-  speedBtn.classList.toggle('slow', slow);
-  speedBtn.setAttribute('aria-label', slow ? 'Slow speech on' : 'Slow speech off');
+// ---------- Segmented controls ----------
+
+function setSeg(seg, value) {
+  const buttons = [...seg.querySelectorAll('button')];
+  buttons.forEach(b => b.setAttribute('aria-checked', b.dataset.value === value));
+  seg.dataset.index = buttons.findIndex(b => b.dataset.value === value);
 }
-speedBtn.onclick = () => {
-  slow = !slow;
-  store.set('greek.slow', slow ? '1' : '0');
-  renderSpeed();
+
+speedSeg.onclick = e => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  speech.unlock();
+  const slow = b.dataset.value === 'slow';
+  if (slow === state.slow) return;
+  state.slow = slow;
+  store.set('greek.slow', slow);
+  setSeg(speedSeg, b.dataset.value);
+  const wasPlaying = state.playing;
   stopPlaying();
-  showHud(slow ? 'Slower speech' : 'Normal speed', false);
+  allLines().forEach(l => prefetch(l.node));
+  if (wasPlaying) play(allUnits());
 };
 
-// ---------- Copy / HUD ----------
+registerSeg.onclick = e => {
+  const b = e.target.closest('button');
+  if (!b || b.dataset.value === state.register) return;
+  state.register = b.dataset.value;
+  setSeg(registerSeg, state.register);
+  render();
+};
 
-let hudTimer;
-function showHud(text, check = true) {
-  hudText.textContent = text;
-  hud.classList.toggle('text-only', !check);
-  hud.classList.add('show');
-  clearTimeout(hudTimer);
-  hudTimer = setTimeout(() => hud.classList.remove('show'), 1300);
+// ---------- Copy, save, toast ----------
+
+let toastTimer;
+function toast(text, check = true) {
+  toastText.textContent = text;
+  toastEl.classList.toggle('plain', !check);
+  toastEl.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toastEl.classList.remove('show'), 1600);
 }
 
 copyBtn.onclick = async () => {
-  const text = allLines().map(l => (l.gap ? '' : l.plain)).join('\n');
+  const text = allLines().map(l => `${l.greek}\n${readLine(l.greek).plain}`).join('\n\n');
   try {
     await navigator.clipboard.writeText(text);
-    showHud('Copied');
+    toast('Copied');
   } catch {
-    showHud('Couldn’t copy', false);
+    toast('Couldn’t copy', false);
   }
 };
+
+saveBtn.onclick = () => {
+  if (!state.result) return;
+  const first = state.result.lines.find(l => l.el);
+  const on = library.toggleSaved({ en: state.text, el: first.el, read: readLine(first.el).plain });
+  saveBtn.setAttribute('aria-pressed', on);
+  saveBtn.classList.remove('pop');
+  void saveBtn.offsetWidth;
+  saveBtn.classList.toggle('pop', on);
+  toast(on ? 'Saved' : 'Removed from Saved', on);
+};
+
+// ---------- Home: suggestions, saved, recent ----------
+
+function rowFor(item, kind) {
+  const li = el('li');
+  const btn = el('button', 'row');
+  btn.innerHTML = `<span class="row-text"><span class="row-en"></span><span class="row-read"></span></span>${icon('chevron')}`;
+  btn.querySelector('.row-en').textContent = item.en.replace(/\n+/g, ' / ');
+  btn.querySelector('.row-read').textContent = item.read;
+  btn.onclick = () => (li.classList.contains('open') ? closeRow(li) : use(item.en));
+  const del = el('button', 'row-delete', 'Delete');
+  del.onclick = () => {
+    (kind === 'saved' ? library.removeSaved : library.removeRecent)(item.en);
+    li.style.height = li.offsetHeight + 'px';
+    li.classList.add('gone');
+    requestAnimationFrame(() => (li.style.height = '0px'));
+    setTimeout(renderHome, 320);
+  };
+  li.append(del, btn);
+  swipeable(li, btn);
+  return li;
+}
+
+// Swipe a row left to reveal Delete, like an iOS list.
+const REVEAL = 88;
+function closeRow(li) { li.classList.remove('open'); li.querySelector('.row').style.transform = ''; }
+function swipeable(li, row) {
+  let x0 = 0, y0 = 0, dx = 0, dragging = false, base = 0;
+  row.addEventListener('pointerdown', e => {
+    x0 = e.clientX; y0 = e.clientY; dx = 0; dragging = false;
+    base = li.classList.contains('open') ? -REVEAL : 0;
+    document.querySelectorAll('.list li.open').forEach(o => o !== li && closeRow(o));
+  });
+  row.addEventListener('pointermove', e => {
+    if (!e.buttons && e.pointerType === 'mouse') return;
+    const mx = e.clientX - x0, my = e.clientY - y0;
+    if (!dragging && Math.abs(mx) > 8 && Math.abs(mx) > Math.abs(my) * 1.4) { dragging = true; row.setPointerCapture(e.pointerId); li.classList.add('dragging'); }
+    if (!dragging) return;
+    dx = Math.min(0, Math.max(-REVEAL * 1.6, base + mx));
+    row.style.transform = `translateX(${dx}px)`;
+  });
+  const end = () => {
+    if (!dragging) return;
+    li.classList.remove('dragging');
+    const open = dx < -REVEAL / 2;
+    li.classList.toggle('open', open);
+    row.style.transform = open ? `translateX(${-REVEAL}px)` : '';
+    // Swallow the click that follows a drag.
+    row.addEventListener('click', e => e.stopImmediatePropagation(), { capture: true, once: true });
+    dragging = false;
+  };
+  row.addEventListener('pointerup', end);
+  row.addEventListener('pointercancel', end);
+}
+
+function renderHome() {
+  const saved = library.saved(), recent = library.recent();
+  $('savedGroup').hidden = !saved.length;
+  $('recentGroup').hidden = !recent.length;
+  $('savedList').replaceChildren(...saved.map(i => rowFor(i, 'saved')));
+  $('recentList').replaceChildren(...recent.slice(0, 12).map(i => rowFor(i, 'recent')));
+  $('suggest').hidden = saved.length + recent.length >= 4;
+}
+
+$('chips').append(...SUGGESTIONS.map(s => {
+  const b = el('button', 'chip', s);
+  b.onclick = () => use(s);
+  return b;
+}));
+$('clearRecent').onclick = () => { library.clearRecent(); renderHome(); };
+
+async function use(text) {
+  input.value = text;
+  autosize();
+  syncButtons();
+  await run();
+  commit();
+  $('scroll').scrollTo({ top: 0 });
+}
 
 // ---------- Input ----------
 
 function autosize() {
   input.style.height = 'auto';
   input.style.height = input.scrollHeight + 'px';
+  foldInput();
+}
+
+// More than three rows of English fold away (with a fade) when you're not typing.
+function foldInput() {
+  const rows = input.scrollHeight / parseFloat(getComputedStyle(input).lineHeight);
+  inputCard.classList.toggle('long', rows > 3.5);
 }
 
 function syncButtons() {
   const has = input.value.length > 0;
   const typing = document.activeElement === input;
-  clearBtn.hidden = !has || typing;
+  clearBtn.hidden = !has;
   doneBtn.hidden = !typing;
   pasteBtn.hidden = has || !listening.hidden;
 }
@@ -298,15 +480,24 @@ function syncButtons() {
 input.addEventListener('input', e => {
   autosize();
   syncButtons();
-  if (playing) stopPlaying();
-  schedule(e.inputType === 'insertFromPaste' ? 0 : 450);
+  if (state.playing) stopPlaying();
+  if (e.inputType === 'insertFromPaste') run();
+  else schedule();
 });
-input.addEventListener('focus', () => { document.body.classList.add('typing'); syncButtons(); });
-input.addEventListener('blur', () => { document.body.classList.remove('typing'); syncButtons(); run(); });
+input.addEventListener('focus', () => { document.body.classList.add('typing'); syncButtons(); fitViewport(); });
+input.addEventListener('blur', () => {
+  document.body.classList.remove('typing');
+  syncButtons();
+  fitViewport();
+  run().then(commit);
+});
+doneBtn.addEventListener('pointerdown', e => e.preventDefault()); // keep focus until the tap lands
 doneBtn.onclick = () => input.blur();
+clearBtn.addEventListener('pointerdown', e => e.preventDefault());
 clearBtn.onclick = () => {
   input.value = '';
   autosize();
+  syncButtons();
   run();
   input.focus();
 };
@@ -314,15 +505,27 @@ clearBtn.onclick = () => {
 pasteBtn.onclick = async () => {
   try {
     const text = await navigator.clipboard.readText();
-    if (!text.trim()) return showHud('Nothing to paste', false);
+    if (!text.trim()) return toast('Nothing to paste', false);
     input.value = text;
     autosize();
     syncButtons();
-    run();
+    await run();
+    commit();
   } catch {
     input.focus();
   }
 };
+
+// The keyboard shrinks the visual viewport on iOS; size the app to what's visible so the
+// result stays in view above the keyboard instead of the page scrolling underneath it.
+const vv = window.visualViewport;
+function fitViewport() {
+  const h = vv ? vv.height : innerHeight;
+  document.documentElement.style.setProperty('--vvh', `${Math.round(h)}px`);
+  if (vv && vv.offsetTop) window.scrollTo(0, 0);
+}
+vv?.addEventListener('resize', fitViewport);
+vv?.addEventListener('scroll', fitViewport);
 
 // ---------- Dictation ----------
 
@@ -331,16 +534,18 @@ let stopListening = null;
 function endListening() {
   stopListening = null;
   micBtn.classList.remove('live');
+  micBtn.setAttribute('aria-label', 'Speak English');
+  input.placeholder = 'Enter text';
   listening.hidden = true;
   syncButtons();
-  run();
+  run().then(commit);
 }
 
 micBtn.onclick = () => {
   if (stopListening) return stopListening();
   if (!dictation.supported) {
     input.focus();
-    return showHud('Tap the mic on the keyboard to dictate', false);
+    return toast('Tap the mic on the keyboard to dictate', false);
   }
   stopPlaying();
   const base = input.value.trim();
@@ -350,36 +555,41 @@ micBtn.onclick = () => {
         input.value = base ? `${base}\n${text}` : text;
         autosize();
         syncButtons();
-        schedule(settled ? 0 : 600);
+        if (settled) run(); else schedule();
       },
       onEnd: endListening,
       onError: err => {
-        if (err === 'not-allowed' || err === 'service-not-allowed') showHud('Allow microphone access to dictate', false);
-        else if (err !== 'no-speech' && err !== 'aborted') showHud('Couldn’t hear that', false);
+        if (err === 'not-allowed' || err === 'service-not-allowed') toast('Allow microphone access in Settings', false);
+        else if (err !== 'no-speech' && err !== 'aborted') toast('Couldn’t hear that', false);
       },
     });
   } catch {
-    return showHud('Tap the mic on the keyboard to dictate', false);
+    return toast('Tap the mic on the keyboard to dictate', false);
   }
   micBtn.classList.add('live');
+  micBtn.setAttribute('aria-label', 'Stop listening');
+  input.placeholder = 'Listening…';
   listening.hidden = false;
   syncButtons();
 };
 
-// ---------- Large title -> nav title ----------
-
-new IntersectionObserver(([e]) => nav.classList.toggle('scrolled', !e.isIntersecting), {
-  rootMargin: `-${nav.offsetHeight - 16}px 0px 0px 0px`,
-}).observe($('title'));
-
-// iOS only shows :active styles when a touch listener exists.
-document.addEventListener('touchstart', () => {}, { passive: true });
-
 // ---------- Start ----------
 
-speech.warmUp();
-renderSpeed();
-input.value = store.get('greek.text') || '';
+speech.onDeviceVoice(() => {
+  if (!state.deviceVoiceNoted) { state.deviceVoiceNoted = true; toast('Using this iPhone’s voice', false); }
+});
+addEventListener('online', () => { if (!stateEl.hidden) run(true); });
+document.addEventListener('touchstart', () => {}, { passive: true }); // enables :active on iOS
+
+if ('serviceWorker' in navigator && location.protocol === 'https:') {
+  navigator.serviceWorker.register('sw.js').catch(() => {});
+}
+
+setSeg(speedSeg, state.slow ? 'slow' : 'normal');
+input.value = store.get('greek.text', '') || '';
 autosize();
 syncButtons();
+fitViewport();
+renderHome();
+speech.warmUp();
 run();

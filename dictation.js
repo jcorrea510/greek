@@ -4,6 +4,7 @@ const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 export const supported = !!Recognition;
 
 // onText(fullText, isFinal) fires as words come in; onEnd() when listening stops.
+// Returns a function that stops listening.
 export function listen({ onText, onEnd, onError }) {
   const rec = new Recognition();
   rec.lang = 'en-US';

@@ -1,2 +1,6 @@
 dev.py
 __pycache__
+.venv
+.remember
+tests
+*.md
