@@ -1,5 +1,5 @@
 // Greek script -> easy English-alphabet pronunciation, e.g. Καλημέρα -> kah-lee-MEH-rah.
-// Stressed syllable is uppercase. Works on one word at a time.
+// Works on one word at a time.
 
 const ACCENTED = { 'ά': 'α', 'έ': 'ε', 'ή': 'η', 'ί': 'ι', 'ό': 'ο', 'ύ': 'υ', 'ώ': 'ω', 'ΐ': 'ϊ', 'ΰ': 'ϋ' };
 const VOICELESS = new Set(['θ', 'κ', 'ξ', 'π', 'σ', 'ς', 'τ', 'φ', 'χ', 'ψ']);
@@ -47,9 +47,10 @@ function phonemes(word) {
     units.push({ c: a }); // anything else (digits, latin letters) passes through
   }
 
-  // γ is "y" before e/i sounds, otherwise "g".
+  // γ is "y" before e/i sounds, otherwise "g". χ is a breathy "h" before vowels, "kh" elsewhere (νύχτα -> neekh-tah).
   units.forEach((u, i) => {
     if (u.c === '?γ') u.c = FRONT.has(units[i + 1]?.v) ? 'y' : 'g';
+    if (u.c === 'h' && !units[i + 1]?.v) u.c = 'kh';
   });
 
   // Unstressed i after a consonant and before a vowel glides into "y": καρδιά -> kar-DYAH.
@@ -88,13 +89,20 @@ function syllables(units) {
 
 const OPEN = { a: 'ah', e: 'eh', i: 'ee', o: 'oh', u: 'oo' };
 const CLOSED = { a: 'a', e: 'e', i: 'ee', o: 'o', u: 'oo' };
+const GREEK = /[\u0370-\u03ff\u1f00-\u1fff]/;
 
-export function pronounce(word) {
+// [{ text: 'kah', stressed: false }, { text: 'lee', ... }, { text: 'meh', stressed: true }, ...]
+export function syllabify(word) {
+  if (!GREEK.test(word)) return [{ text: word, stressed: false }];
   const syl = syllables(phonemes(word));
   const multi = syl.length > 1;
   return syl.map(s => {
     const vowel = s.v ? (s.coda.length ? CLOSED : OPEN)[s.v] : '';
-    const text = s.onset.join('') + vowel + s.coda.join('');
-    return multi && s.stressed ? text.toUpperCase() : text;
-  }).join('-');
+    return { text: s.onset.join('') + vowel + s.coda.join(''), stressed: multi && !!s.stressed };
+  });
+}
+
+// Plain-text form with the stressed syllable in capitals: kah-lee-MEH-rah
+export function pronounce(word) {
+  return syllabify(word).map(s => (s.stressed ? s.text.toUpperCase() : s.text)).join('-');
 }
