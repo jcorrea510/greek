@@ -232,7 +232,7 @@ body.typing .result-card { flex-grow: 0; min-height: 0; }
 .say b { font-weight: 700; color: #fff; }
 .say i { font-style: normal; color: var(--label-3); padding: 0 0.02em; font-weight: 300; }
 .w {
-  position: relative; display: inline; cursor: pointer;
+  position: relative; display: inline; cursor: pointer; white-space: nowrap; /* never split a word at its syllable hyphens */
   border-radius: 10px; padding: 2px 3px; margin: 0 -3px;
   -webkit-box-decoration-break: clone; box-decoration-break: clone;
   transition: background-color 0.22s var(--ease), box-shadow 0.22s var(--ease), color 0.2s;

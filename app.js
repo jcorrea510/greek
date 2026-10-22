@@ -14,7 +14,7 @@ const toastEl = $('toast'), toastText = $('toastText');
 let linesEl = $('lines');
 
 const UNIT_CHARS = 280;          // a long line is spoken in pieces of about this many characters
-const TYPING_DELAY = 650;        // ms of quiet before a sentence goes to the translator
+const TYPING_DELAY = 1500;       // ms of quiet while typing before the translator is asked (its quota is small)
 const SUGGESTIONS = ['Hello', 'How are you?', 'Thank you', 'The bill, please', 'Cheers!', 'I love you', 'Where’s the beach?', 'How much is it?'];
 
 const state = {
@@ -140,7 +140,7 @@ function showState(kind) {
   if (!kind) return;
   const offline = !navigator.onLine;
   const copy = {
-    basic: ['', 'Basic translation. The natural one is busy right now.', 'Retry'],
+    basic: ['', 'Basic translation. Natural Greek isn’t available right now, so this may be formal or literal.', 'Retry'],
     error: offline
       ? ['wifi-off', '<b>You’re offline</b>Common phrases and ones you’ve translated before still work.', 'Retry']
       : ['retry', '<b>Couldn’t translate</b>Check your connection and try again.', 'Try Again'],

@@ -2,7 +2,7 @@
 // with the cached copy used when there's no connection. Speech you've already heard is
 // cache-first: it never changes for the same text and speed.
 
-const VERSION = 'greek-v5';
+const VERSION = 'greek-v6';
 const SHELL = [
   './', 'index.html', 'style.css', 'app.js', 'config.js', 'translate.js', 'phrasebook.js', 'translit.js',
   'speech.js', 'dictation.js', 'library.js', 'manifest.webmanifest', 'icon-180.png', 'icon-512.png',

@@ -65,8 +65,18 @@ const available = () => Date.now() > downUntil && !!(window.AudioContext || wind
 
 // ---------- Loading ----------
 
+// The voice reads a lone "Σ’" as the letter name ("sigma agapo"). Join consonant-only
+// elisions onto the next word, the way they're pronounced: Σ’ αγαπώ -> Σαγαπώ, μ’ αρέσει -> μαρέσει.
+// Any other apostrophe (απ’ το, Να ’τος) costs an odd ~0.4s pause, so it goes too.
+// Measured: "Σ’ αγαπώ" 1.26s of speech (letter name), "Σαγαπώ" 0.56s, same as "σαγαπώ".
+export function speakable(text) {
+  return text
+    .replace(/(^|[^\p{L}])([βγδζθκλμνξπρσςτφχψ]+)['’ʼ`]\s*(?=\p{L})/giu, '$1$2')
+    .replace(/['’ʼ`]/g, '');
+}
+
 async function fetchSpeech(text, rate) {
-  const url = `${API}/api/tts?rate=${rate}&text=${encodeURIComponent(text)}`;
+  const url = `${API}/api/tts?rate=${rate}&text=${encodeURIComponent(speakable(text))}`;
   let res;
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
@@ -210,7 +220,7 @@ if ('speechSynthesis' in window) speechSynthesis.addEventListener?.('voiceschang
 
 function utter(text, slow) {
   listeners.deviceVoice?.();
-  const u = new SpeechSynthesisUtterance(text);
+  const u = new SpeechSynthesisUtterance(speakable(text));
   u.lang = 'el-GR';
   if (deviceVoice()) u.voice = deviceVoice();
   u.rate = slow ? DEVICE_RATE.slow : DEVICE_RATE.normal;

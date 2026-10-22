@@ -22,14 +22,16 @@ PROMPT_VERSION = "5"
 MAX_CHARS = 2500
 DEADLINE = 25  # seconds; the function itself is allowed 30
 
-# Tried in order. The free tier sheds load per model with 503/429, so a busy model falls
-# through to the next. Thinking is kept minimal: translation doesn't benefit from it and
-# it multiplies latency (34s vs 4s in testing).
+# Tried in order. The free tier allows each model only 20 requests a day (and a few a
+# minute), so a busy or exhausted model falls through to the next. Only full flash models:
+# the lite ones misspell Greek and miss idioms ("Excuse me" -> "Για σιγά!"), and a wrong
+# answer is worse than the app's clearly-labelled basic fallback. Thinking is kept minimal:
+# translation doesn't benefit from it and it multiplies latency (34s vs 4s in testing).
 MODELS = [
     ("gemini-3.5-flash", {"thinkingLevel": "minimal"}),
     ("gemini-3.8-flash", {"thinkingLevel": "low"}),
-    ("gemini-3.5-flash-lite", None),
-    ("gemini-flash-lite-latest", None),
+    ("gemini-3.7-flash", {"thinkingLevel": "low"}),
+    ("gemini-3.6-flash", {"thinkingLevel": "low"}),
 ]
 
 SYSTEM = """You translate English into natural, everyday spoken Greek: what a native Greek speaker in their 20s or 30s would actually say out loud. The reader is an English speaker who will read your Greek aloud to Greek friends, waiters, shopkeepers, or sing it.

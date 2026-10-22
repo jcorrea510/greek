@@ -45,7 +45,7 @@
 
   { "group": "directions", "en": "Where is the bathroom?", "el": ["Πού είναι η τουαλέτα;"], "read": "poo EE-neh ee too-a-LEH-ta?" },
   { "group": "directions", "en": "Where's the beach?", "el": ["Πού είναι η παραλία;"], "read": "poo EE-neh ee pa-ra-LEE-a?" },
-  { "group": "directions", "en": "On the left", "el": ["Αριστερά"], "read": "a-ree-steh-RAH" },
+  { "group": "directions", "en": "On the left", "el": ["Αριστερά", "Στα αριστερά"], "read": "a-ree-steh-RAH" },
   { "group": "directions", "en": "On the right", "el": ["Δεξιά", "Στα δεξιά"], "read": "dheh-KSYAH" },
   { "group": "directions", "en": "Straight ahead", "el": ["Ευθεία", "Ίσια μπροστά", "Ίσια"], "read": "ef-THEE-a" },
   { "group": "directions", "en": "How much is it?", "el": ["Πόσο κάνει;"], "read": "POH-so KAH-nee?" },

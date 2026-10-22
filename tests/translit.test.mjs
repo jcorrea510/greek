@@ -21,6 +21,7 @@ const cases = [
   ['όχι', 'OH-hee'],
   ['Συγγνώμη', 'seeg-NOH-mee'],
   ['Αγγλικά', 'an-glee-KAH'],
+  ['Να ’τος ο ήλιος', "nah 'tos oh EE-lyos"],
 ];
 let fail = 0;
 for (const [greek, want] of cases) {
