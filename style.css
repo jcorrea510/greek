@@ -1,0 +1,127 @@
+:root {
+  --bg1: #0a5bd3;
+  --bg2: #19b5e6;
+  --bg3: #f4f8ff;
+  --text: #ffffff;
+  --text-2: rgba(255, 255, 255, 0.72);
+  --glass: rgba(255, 255, 255, 0.14);
+  --glass-strong: rgba(255, 255, 255, 0.24);
+  --edge: rgba(255, 255, 255, 0.45);
+  --shadow: 0 10px 40px rgba(0, 30, 90, 0.28);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg1: #03163a;
+    --bg2: #0a4c8f;
+    --bg3: #1d6fb8;
+    --glass: rgba(255, 255, 255, 0.08);
+    --glass-strong: rgba(255, 255, 255, 0.16);
+    --edge: rgba(255, 255, 255, 0.28);
+    --shadow: 0 10px 40px rgba(0, 0, 0, 0.45);
+  }
+}
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; min-height: 100%; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", system-ui, sans-serif;
+  color: var(--text);
+  background: var(--bg1);
+  -webkit-font-smoothing: antialiased;
+  overscroll-behavior: none;
+}
+
+/* Aegean backdrop: soft moving colour so the glass has something to refract */
+.backdrop { position: fixed; inset: 0; overflow: hidden; z-index: -1;
+  background: linear-gradient(160deg, var(--bg1), var(--bg2) 70%); }
+.blob { position: absolute; border-radius: 50%; filter: blur(60px); opacity: 0.75; }
+.b1 { width: 70vmax; height: 70vmax; background: var(--bg2); top: -30vmax; right: -25vmax; animation: drift 18s ease-in-out infinite alternate; }
+.b2 { width: 55vmax; height: 55vmax; background: var(--bg3); bottom: -30vmax; left: -20vmax; opacity: 0.45; animation: drift 22s ease-in-out infinite alternate-reverse; }
+.b3 { width: 40vmax; height: 40vmax; background: #1e3fd0; top: 35%; left: 30%; opacity: 0.5; animation: drift 26s ease-in-out infinite alternate; }
+@keyframes drift { to { transform: translate(-8vmax, 6vmax) scale(1.12); } }
+@media (prefers-reduced-motion: reduce) { .blob { animation: none; } }
+
+main {
+  max-width: 640px; margin: 0 auto;
+  padding: calc(env(safe-area-inset-top) + 20px) 16px calc(env(safe-area-inset-bottom) + 110px);
+  display: flex; flex-direction: column; gap: 16px;
+}
+h1 { font-size: 34px; font-weight: 700; letter-spacing: 0.01em; margin: 8px 4px 4px; }
+
+/* Liquid Glass surface: translucent, blurred, saturated, with a specular rim */
+.glass {
+  position: relative;
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  backdrop-filter: blur(24px) saturate(180%);
+  border-radius: 28px;
+  box-shadow:
+    var(--shadow),
+    inset 0 1px 0.5px rgba(255, 255, 255, 0.55),
+    inset 0 -1px 1px rgba(255, 255, 255, 0.12),
+    inset 0 0 0 0.5px var(--edge);
+  padding: 16px 18px;
+}
+.glass::before { /* light catching the top edge */
+  content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+  background: linear-gradient(180deg, rgba(255,255,255,0.22), rgba(255,255,255,0) 40%);
+  mix-blend-mode: overlay;
+}
+
+.label { font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-2); margin-bottom: 6px; }
+.hint { text-transform: none; letter-spacing: 0; font-weight: 400; float: right; }
+
+textarea {
+  width: 100%; border: 0; outline: 0; resize: none; background: transparent;
+  color: var(--text); font: inherit; font-size: 22px; line-height: 1.3; padding: 0 36px 0 0;
+}
+textarea::placeholder { color: rgba(255, 255, 255, 0.55); }
+
+.glass-btn {
+  appearance: none; border: 0; color: var(--text); font: inherit; cursor: pointer;
+  background: var(--glass-strong);
+  -webkit-backdrop-filter: blur(16px) saturate(180%);
+  backdrop-filter: blur(16px) saturate(180%);
+  box-shadow: inset 0 1px 0.5px rgba(255,255,255,0.6), inset 0 0 0 0.5px var(--edge), 0 4px 14px rgba(0,30,90,0.18);
+  transition: transform 0.25s cubic-bezier(.3,1.6,.5,1), background 0.2s;
+}
+.glass-btn:active { transform: scale(0.94); background: rgba(255,255,255,0.34); }
+.glass-btn svg { width: 20px; height: 20px; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; fill: none; }
+.glass-btn svg.fill path:first-child { fill: currentColor; stroke: none; }
+
+.icon-btn { position: absolute; top: 12px; right: 12px; width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; }
+.icon-btn svg { width: 14px; height: 14px; }
+
+.words { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 12px; }
+.word {
+  appearance: none; border: 0; font: inherit; color: var(--text); cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; gap: 1px;
+  padding: 7px 12px; border-radius: 16px;
+  background: rgba(255,255,255,0.10);
+  box-shadow: inset 0 1px 0.5px rgba(255,255,255,0.45), inset 0 0 0 0.5px rgba(255,255,255,0.25);
+  transition: transform 0.25s cubic-bezier(.3,1.6,.5,1), background 0.2s;
+}
+.word:active, .word.speaking { transform: scale(1.06); background: rgba(255,255,255,0.32); }
+.word .say { font-size: 20px; font-weight: 600; letter-spacing: 0.01em; }
+.word .gr { font-size: 13px; color: var(--text-2); }
+.punct { align-self: center; font-size: 22px; font-weight: 600; margin-left: -4px; }
+
+.script { font-size: 15px; color: var(--text-2); margin: 0 2px 2px; }
+
+.play-btn {
+  position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom) + 20px); transform: translateX(-50%);
+  width: min(calc(100% - 32px), 360px); height: 58px; border-radius: 29px;
+  background: rgba(255, 255, 255, 0.22);
+  -webkit-backdrop-filter: blur(30px) saturate(160%); backdrop-filter: blur(30px) saturate(160%);
+  box-shadow: inset 0 1px 0.5px rgba(255,255,255,0.7), inset 0 0 0 0.5px var(--edge), 0 10px 30px rgba(0,20,70,0.35);
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  font-size: 18px; font-weight: 600;
+}
+.play-btn svg { width: 24px; height: 24px; }
+.play-btn:active { transform: translateX(-50%) scale(0.95); }
+.play-btn[hidden] { display: none; }
+.play-btn.speaking .wave { animation: pulse 0.9s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: 0.25; } }
+
+.status { text-align: center; font-size: 15px; color: var(--text-2); min-height: 20px; }
+.result-card.loading { opacity: 0.6; transition: opacity 0.2s; }

@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<title>Greek</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Greek">
+<meta name="theme-color" content="#0b4fa8">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon-180.png">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="backdrop" aria-hidden="true">
+  <div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div>
+</div>
+
+<main>
+  <h1>Greek</h1>
+
+  <section class="glass input-card">
+    <div class="label">English</div>
+    <textarea id="input" rows="3" placeholder="Type what you want to say…"
+      autocomplete="off" autocorrect="on" spellcheck="true" enterkeyhint="go"></textarea>
+    <button id="clear" class="glass-btn icon-btn" aria-label="Clear" hidden>
+      <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
+    </button>
+  </section>
+
+  <section class="glass result-card" id="result" hidden>
+    <div class="label">Greek <span class="hint">Tap a word to hear it</span></div>
+    <div id="words" class="words"></div>
+    <div id="script" class="script"></div>
+  </section>
+
+  <button id="play" class="glass-btn play-btn" hidden>
+    <svg viewBox="0 0 24 24" class="fill"><path d="M4 9v6h4l5 4V5L8 9H4z"/><path class="wave" d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12"/></svg>
+    <span>Play sentence</span>
+  </button>
+
+  <div id="status" class="status" aria-live="polite"></div>
+</main>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>
